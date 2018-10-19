@@ -3,12 +3,13 @@
  * module.exports.thing = 'a thing';
  *
  * You can import it from another modules like this:
- * var mod = require('role.miner');
+ * var mod = require('role.minerRocks');
  * mod.thing == 'a thing'; // true
  */
 
+
 var logger = require("screeps.logger");
-logger = new logger("role.miner");
+logger = new logger("role.minerRocks");
 
 var obj = function() {
 }
@@ -16,29 +17,37 @@ var base = require('role.base');
 obj.prototype = new base();
 
 
-global.utils.extendFunction(obj, "init", function(name, roomManager, sourceLoc, homeOverride) {
+global.utils.extendFunction(obj, "init", function(name, roomManager) {
     this.__init(name, roomManager);
-    this.sourceLoc = {x:sourceLoc.x, y:sourceLoc.y, roomName:sourceLoc.roomName};
-    this.source = false;
-    this.homeOverride = homeOverride;
 //logger.log("---------------------------------------init", roomManager, sourceLoc)
     this.sourceContainer = false;
     this.minerCreepId = false;
     this.minerCreep = false;
-
+    
+    this.extractor = false;
+    this.mineral = false;
     
 }, "__");
 
 
 global.utils.extendFunction(obj, "tickInit", function() {
-    //get the source object
+    if (this.roomManager.visibility) {
+        this.extractor = this.roomManager.room.find(FIND_STRUCTURES, {filter:function(s) {return s.structureType == STRUCTURE_EXTRACTOR}})[0];
+        if (this.extractor) {
+            //logger.log(JSON.stringify(this.extractor))
+            this.sourceContainer = this.extractor.getContainer();
+            this.mineral = this.roomManager.room.find(FIND_MINERALS)[0];
+        }
+    }
+    if (!this.extractor) {
+        return;
+    }
     
-//logger.log("-----------",this.sourceLoc, this.sourceLoc.x);
     
     this.minerCreep = Game.creeps[this.minerCreepId];
     
-    //logger.log("num", this.name, this.minerCreep, this.roomManager.room.name)
-    if (!this.minerCreep) {
+    //logger.log("num", this.roomManager.roomName, this.minerCreep, this.extractor == undefined, this.mineral, this.mineral.amount)
+    if (!this.minerCreep && this.extractor && this.mineral.mineralAmount > 0) {
         //we don't have a creep!  spawn one dem mofos
         this.minerCreepId = false;
         var mem = false;
@@ -48,48 +57,34 @@ global.utils.extendFunction(obj, "tickInit", function() {
             }
         }
         var minBodies = 0;
-        if (this.roomManager.room.energyCapacityAvailable >= 600 && !this.roomManager.creepCrisis()) {
-            minBodies = 2;
-        }
+        // if (this.roomManager.room.energyCapacityAvailable >= 600) {
+        //     minBodies = 2;
+        // }
         
-        var priority = 15;
+        var priority = 1;
         if (this.numCreeps == 0)
-            priority = 150;
-        var req = global.utils.makeCreepRequest(this.name, "minerCreepId", [WORK, WORK, MOVE], [WORK, WORK, MOVE], priority, mem, 5, minBodies)
-        req.important = true;
+            priority = 1;
+        var req = global.utils.makeCreepRequest(this.name, "minerCreepId", [WORK, WORK, MOVE], [WORK, WORK, WORK, MOVE], priority, mem, 3, minBodies)
+        
         this.roomManager.requestCreep(req);
     }
-    
 
-    
-    if (Game.rooms[this.sourceLoc.roomName]) {
-        var room = Game.rooms[this.sourceLoc.roomName];
-        
-        //logger.log(room, this.sourceLoc, this.sourceLoc.x);
-        var source = room.lookForAt(LOOK_SOURCES, this.sourceLoc.x, this.sourceLoc.y);
-        if (source.length) {
-            this.source = source[0];
-            this.sourceContainer = this.source.getContainer();
-        } else {
-            logger.log("ain't no source here fool.. ", this.sourceLoc);
-        }
-    }
 }, "__");
 
 global.utils.extendFunction(obj, "tick", function() {
-    if (this.minerCreep) {
-        if (this.minerCreep.flee(5)) {
-            return;
+    if (this.minerCreep && this.extractor) {
+        if (this.mineral.amount == 0) {
+            this.minerCreep.suicide();
         }
         //logger.log('----------------------------here?',this.minerCreepId, this.minerCreep.pos.isNearTo(this.sourceLoc.x, this.sourceLoc.y), this.sourceLoc.x, this.sourceLoc.y)
-        var targetPos = new RoomPosition(this.sourceLoc.x, this.sourceLoc.y, this.sourceLoc.roomName);
-        // if (this.sourceContainer) {
-        //     targetPos = this.sourceContainer.pos;
-        // }
+        var targetPos = this.extractor.pos;
+        if (this.sourceContainer) {
+            targetPos = this.sourceContainer.pos;
+        }
 
         if (!this.minerCreep.pos.isNearTo(targetPos)) {
             //logger.log(this.minerCreep, "moving to", JSON.stringify(targetPos))
-            global.utils.moveCreep(this.minerCreep, targetPos, {ignoreCreeps:false});
+            global.utils.moveCreep(this.minerCreep, targetPos);
             
         } else {
             //logger.log('here??>>>')
@@ -103,7 +98,7 @@ global.utils.extendFunction(obj, "tick", function() {
                 //logger.log('this moving?', JSON.stringify(targetPos))
                 global.utils.moveCreep(this.minerCreep, targetPos);
             }
-            var res = this.minerCreep.harvest(this.source);
+            var res = this.minerCreep.harvest(this.mineral);
         }
     }
 }, "__");
